@@ -11,7 +11,7 @@ import numpy as np
 import networkx as nx
 from numpy import *
 from sklearn.metrics import normalized_mutual_info_score, adjusted_rand_score, jaccard_score
-# from accuracy_globalsearch import *
+
 
 import time
 
@@ -114,30 +114,7 @@ def laplacian_positional_encoding(adj, pos_enc_dim):
 
     return lap_pos_enc  # Return the positional encoding as a torch tensor
 
-# def laplacian_positional_encoding(g, pos_enc_dim):
-#     """
-#         Graph positional encoding v/ Laplacian eigenvectors
-#     """
 
-#     # Laplacian
-
-#     #adjacency_matrix(transpose, scipy_fmt="csr")
-#     # A = g.adjacency_matrix_scipy(return_edge_ids=False).astype(float)
-#     A = g.adj_external(scipy_fmt='csr') # 2708x2708 sparse matrix
-#     N = sp.diags(dgl.backend.asnumpy(g.in_degrees()).clip(1) ** -0.5, dtype=float)# 对角矩阵 计算度矩阵的逆平方根, 2708x2708 sparse matrix
-#     L = sp.eye(g.number_of_nodes()) - N * A * N # 2708x2708 sparse matrix 计算拉普拉斯矩阵 L = I - D^(-1/2) * A * D^(-1/2)
-
-#     # Eigenvectors with scipy
-#     # 使用scipy计算拉普拉斯矩阵的特征值和特征向量
-#     #EigVal, EigVec = sp.linalg.eigs(L, k=pos_enc_dim+1, which='SR')
-#     EigVal, EigVec = sp.linalg.eigs(L, k=pos_enc_dim+1, which='SR', tol=1e-2) # for 40 PEs
-#     EigVec = EigVec[:, EigVal.argsort()] # increasing order
-#     lap_pos_enc = torch.from_numpy(EigVec[:,1:pos_enc_dim+1]).float() # 取前 pos_enc_dim 个特征向量（去掉第一个）
-
-#     return lap_pos_enc #torch.Size([2708, 3])
-
-
-# 论文p5左上部分的特征传播,分k层的(k跳邻居), 尚未标准化
 def re_features(adj, features, K):#[2708, 2708] , [2708, 1436] , 5
     #传播之后的特征矩阵,size= (N, 1, K+1, d )  torch.Size([2708, 1, 6, 1436])
     nodes_features = torch.empty(features.shape[0], 1, K+1, features.shape[1])
@@ -186,17 +163,6 @@ def conductance_hop(adj, max_khop): #[2708, 2708] ,  5
         results==torch.ones((max_khop+1, adj.shape[0])) # 如果只有一跳，则将结果矩阵置为全1
     return results #[2708, 6]  是一个矩阵，用于存储每个节点在不同跳数（hop）下的导电性（conductance）值, 根据最大导电性跳数，将 results 矩阵二值化（0或1），用于进一步的图分析或特征处理。
 
-# def f1_score_calculation(y_pred, y_true):
-#     if len(y_pred.shape) == 1:
-#         y_pred = y_pred.reshape(1, -1)
-#         y_true = y_true.reshape(1, -1)
-#     F1 = []
-#     for i in range(y_pred.shape[0]):
-#         pre = torch.sum(torch.multiply(y_pred[i], y_true[i]))/(torch.sum(y_pred[i])+1E-9)
-#         rec = torch.sum(torch.multiply(y_pred[i], y_true[i]))/(torch.sum(y_true[i])+1E-9)
-#         F1.append(2 * pre * rec / (pre + rec+1E-9))
-
-#     return mean(F1)
 
 def f1_score_calculation(y_pred, y_true):  # [100, 2708], [100, 2708]
     F1_scores = []
@@ -226,16 +192,7 @@ def evaluation(comm_find, comm):
     
     return normalized_mutual_info_score(comm, comm_find), adjusted_rand_score(comm, comm_find), jaccard_score(comm, comm_find)
 
-# def evaluation(comm_find, comm):
 
-#     nmi_all, ari_all, jac_all = [], [], []
-
-#     for i in range(comm_find.shape[0]):
-#         nmi_all.append(NMI_score(comm_find[i], comm[i]))
-#         ari_all.append(ARI_score(comm_find[i], comm[i]))
-#         jac_all.append(JAC_score(comm_find[i], comm[i]))
-
-#     return np.mean(nmi_all), np.mean(ari_all), np.mean(jac_all) 
 
 def NMI_score(comm_find, comm):
 

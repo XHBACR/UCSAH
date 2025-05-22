@@ -112,15 +112,7 @@ class TransformerBlock(nn.Module):
         
         return node_tensor, neighbor_tensor # [2708, 1, 512] , [2708, 5, 512]
     
-        # neighbor_tensor = torch.sum(neighbor_tensor, dim=1, keepdim=True)
-        
-        # output = (node_tensor + neighbor_tensor).squeeze()
-        
 
-        # output = self.Linear1(torch.relu(self.out_proj(output)))
-
-    
-        # return torch.log_softmax(output, dim=1)
 
 
 class FeedForwardNetwork(nn.Module):
