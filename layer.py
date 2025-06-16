@@ -13,35 +13,37 @@ def init_params(module, n_layers):
     if isinstance(module, nn.Embedding):
         module.weight.data.normal_(mean=0.0, std=0.02)
 
+
+
+class NodeClassificationLayer(nn.Module):
+    def __init__(self, input_dim, class_num):
+        super(NodeClassificationLayer, self).__init__()
+        self.fc = nn.Linear(input_dim, class_num) 
+        self.softmax = nn.Softmax(dim=-1) 
+
+    def forward(self, node_emb):
+        logits = self.fc(node_emb)  
+        probabilities = self.softmax(logits) 
+        return probabilities 
+
+
 class SemanticAttention(nn.Module):
     def __init__(self, input_dim):
         super(SemanticAttention, self).__init__()
         self.attention_vector = nn.Parameter(torch.randn(input_dim))
 
-    def forward(self, low_level_emb , high_level_emb): #[1000, 2, 512] , [1000, 2, 512]
-        # x 的形状为 [batch_size, num_vectors, input_dim]
-        # 计算权重
-        weights = torch.matmul(torch.cat((low_level_emb, high_level_emb), dim=-1), self.attention_vector) # [1000, 2] <- [1000, 2, 1024] , [1024]
-        # 归一化权重
+    def forward(self, low_level_emb , high_level_emb):
+
+        weights = torch.matmul(torch.cat((low_level_emb, high_level_emb), dim=-1), self.attention_vector) 
+
         weights = F.softmax(weights, dim=1)
-        # 加权求和
+
         low_level_agg = torch.sum(low_level_emb * weights.unsqueeze(-1), dim=1)
         high_level_agg = torch.sum(high_level_emb * weights.unsqueeze(-1), dim=1)
-        return low_level_agg, high_level_agg #[1000, 512] , [1000, 512]
+        return low_level_agg, high_level_agg 
 
 
-
-def gelu(x):
-    """
-    GELU activation
-    https://arxiv.org/abs/1606.08415
-    https://github.com/huggingface/pytorch-openai-transformer-lm/blob/master/model_pytorch.py#L14
-    https://github.com/huggingface/pytorch-pretrained-BERT/blob/master/modeling.py
-    """
-    # return 0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
-    return 0.5 * x * (1.0 + torch.erf(x / math.sqrt(2.0)))
-
-class TransformerBlock(nn.Module):
+class Zoom_aware_Transformer(nn.Module):
     def __init__(
         self,
         hops, 
@@ -66,8 +68,9 @@ class TransformerBlock(nn.Module):
         self.attention_dropout_rate = attention_dropout_rate
 
         self.att_embeddings_nope = nn.Linear(self.input_dim, self.hidden_dim)
+        self.hop_num = hops
 
-        encoders = [EncoderLayer(self.hidden_dim, self.ffn_dim, self.dropout_rate, self.attention_dropout_rate, self.num_heads)
+        encoders = [EncoderLayer(self.hidden_dim, self.ffn_dim, self.dropout_rate, self.attention_dropout_rate, self.num_heads, self.hop_num)
                     for _ in range(self.n_layers)]
         self.layers = nn.ModuleList(encoders)
         self.final_ln = nn.LayerNorm(hidden_dim)
@@ -78,39 +81,35 @@ class TransformerBlock(nn.Module):
 
         self.attn_layer = nn.Linear(2 * self.hidden_dim, 1)
 
-        # self.Linear1 = nn.Linear(int(self.hidden_dim/2), self.n_class)
-
         self.scaling = nn.Parameter(torch.ones(1) * 0.5)
 
 
         self.apply(lambda module: init_params(module, n_layers=n_layers))
 
-    def forward(self, batched_data): # [2708, 6, 1436]
+    def forward(self, batched_data): 
 
         # print(batched_data.shape)
-        tensor = self.att_embeddings_nope(batched_data) # [2708, 6, 512]
+        tensor = self.att_embeddings_nope(batched_data) 
 
-        
-        # transformer encoder  经过n层transformer
         for enc_layer in self.layers:
-            tensor = enc_layer(tensor) #[2708, 6, 512]
+            tensor = enc_layer(tensor)
         
-        output = self.final_ln(tensor) #[2708, 6, 512]
+        output = self.final_ln(tensor)
 
         # print(output.shape)
-        target = output[:,0,:].unsqueeze(1).repeat(1,self.seq_len-1,1) #[2708, 5, 512]  每个节点重复5次emb
+        target = output[:,0,:].unsqueeze(1).repeat(1,self.seq_len-1,1)
         split_tensor = torch.split(output, [1, self.seq_len-1], dim=1)
 
-        node_tensor = split_tensor[0]  #[2708, 1, 512]
-        neighbor_tensor = split_tensor[1]  #[2708, 5, 512]
+        node_tensor = split_tensor[0] 
+        neighbor_tensor = split_tensor[1] 
     
-        layer_atten = self.attn_layer(torch.cat((target, neighbor_tensor), dim=2)) # [2708, 5, 1] <- [2708, 5, 512+512](节点级emb 连接 社区级emb)
+        layer_atten = self.attn_layer(torch.cat((target, neighbor_tensor), dim=2)) 
         
-        layer_atten = F.softmax(layer_atten, dim=1) # [2708, 5, 1]
+        layer_atten = F.softmax(layer_atten, dim=1) 
     
-        neighbor_tensor = neighbor_tensor * layer_atten  #公式4
+        neighbor_tensor = neighbor_tensor * layer_atten 
         
-        return node_tensor, neighbor_tensor # [2708, 1, 512] , [2708, 5, 512]
+        return node_tensor, neighbor_tensor 
     
 
 
@@ -130,11 +129,12 @@ class FeedForwardNetwork(nn.Module):
         return x
 
 
-class MultiHeadAttention(nn.Module):
-    def __init__(self, hidden_size, attention_dropout_rate, num_heads):
-        super(MultiHeadAttention, self).__init__()
+class Zoom_aware_MSA(nn.Module):
+    def __init__(self, hidden_size, attention_dropout_rate, num_heads, hop_num):
+        super(Zoom_aware_MSA, self).__init__()
 
         self.num_heads = num_heads
+        self.hop_num = hop_num
 
         self.att_size = att_size = hidden_size // num_heads
         self.scale = att_size ** -0.5
@@ -146,32 +146,40 @@ class MultiHeadAttention(nn.Module):
 
         self.output_layer = nn.Linear(num_heads * att_size, hidden_size)
 
-    def forward(self, q, k, v, attn_bias=None):
+        self.zoom_bias = nn.Parameter(torch.randn(2 * hop_num + 1, 1))
+
+    def forward(self, q, k, v, attn_bias=None): 
         orig_q_size = q.size()
 
         d_k = self.att_size
         d_v = self.att_size
         batch_size = q.size(0)
+        zoom_encoding = torch.zeros(self.hop_num+1, self.hop_num+1)
+
+        for i in range(self.hop_num+1):
+            for j in range(self.hop_num+1):
+                zoom_encoding[i, j] = self.zoom_bias[i - j + self.hop_num]  
+
 
         # head_i = Attention(Q(W^Q)_i, K(W^K)_i, V(W^V)_i)
         q = self.linear_q(q).view(batch_size, -1, self.num_heads, d_k)
-        k = self.linear_k(k).view(batch_size, -1, self.num_heads, d_k)
-        v = self.linear_v(v).view(batch_size, -1, self.num_heads, d_v)
+        k = self.linear_k(k).view(batch_size, -1, self.num_heads, d_k) 
+        v = self.linear_v(v).view(batch_size, -1, self.num_heads, d_v) 
 
-        q = q.transpose(1, 2)                  # [b, h, q_len, d_k]
-        v = v.transpose(1, 2)                  # [b, h, v_len, d_v]
-        k = k.transpose(1, 2).transpose(2, 3)  # [b, h, d_k, k_len]
+        q = q.transpose(1, 2)               
+        v = v.transpose(1, 2)                 
+        k = k.transpose(1, 2).transpose(2, 3)  
 
         # Scaled Dot-Product Attention.
-        # Attention(Q, K, V) = softmax((QK^T)/sqrt(d_k))V
-        q = q * self.scale
-        x = torch.matmul(q, k)  # [b, h, q_len, k_len]
+        # Attention(Q, K, V) = softmax((QK^T)/sqrt(d_k)+Zoom)V
+        q = q * self.scale  
+        x = torch.matmul(q, k) +zoom_encoding
         if attn_bias is not None:
             x = x + attn_bias
 
-        x = torch.softmax(x, dim=3)
+        x = torch.softmax(x, dim=3) 
         x = self.att_dropout(x)
-        x = x.matmul(v)  # [b, h, q_len, attn]
+        x = x.matmul(v)  # [b, h, q_len, attn] 
 
         x = x.transpose(1, 2).contiguous()  # [b, q_len, h, attn]
         x = x.view(batch_size, -1, self.num_heads * d_v)
@@ -183,12 +191,12 @@ class MultiHeadAttention(nn.Module):
 
 
 class EncoderLayer(nn.Module):
-    def __init__(self, hidden_size, ffn_size, dropout_rate, attention_dropout_rate, num_heads):
+    def __init__(self, hidden_size, ffn_size, dropout_rate, attention_dropout_rate, num_heads, hop_num):
         super(EncoderLayer, self).__init__()
 
         self.self_attention_norm = nn.LayerNorm(hidden_size)
-        self.self_attention = MultiHeadAttention(
-            hidden_size, attention_dropout_rate, num_heads)
+        self.self_attention = Zoom_aware_MSA(
+            hidden_size, attention_dropout_rate, num_heads, hop_num)
         self.self_attention_dropout = nn.Dropout(dropout_rate)
 
         self.ffn_norm = nn.LayerNorm(hidden_size)

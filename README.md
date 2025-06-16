@@ -1,3 +1,9 @@
+# Introduction
+
+This is the pytorch implementation of paper "Scalable Unsupervised Community Search via Graph Transformer over Attributed Heterogeneous Information Networks"
+![model](Framework_of_UCSAH.png)
+
+
 ## Requirements
 ```
 torch                     2.2.0
@@ -10,7 +16,7 @@ pandas                    2.0.3
 ```
 
 ## Dataset
-The `dataset` folder contains the preprocessed IMDB data, where multi-view feature tokens have already been constructed.
+The `dataset` folder contains the preprocessed IMDB data.
 
 ## Train
-Train and evaluate the model using python `mainTrain.py`.
+Train and evaluate the model using python file `mainTrain.py`.
