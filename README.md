@@ -1,4 +1,4 @@
-# Introduction
+## Introduction
 
 This is the pytorch implementation of paper "Scalable Unsupervised Community Search via Graph Transformer over Attributed Heterogeneous Information Networks"
 ![model](Framework_of_UCSAH.png)
